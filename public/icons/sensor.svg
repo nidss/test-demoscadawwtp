@@ -1,0 +1,55 @@
+<svg width="240" height="240" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- SHADOW -->
+  <ellipse cx="120" cy="206" rx="42" ry="8" fill="#00000020"></ellipse>
+
+  <!-- SENSOR HEAD -->
+  <rect x="84" y="24" width="72" height="54" rx="14" fill="#334155"></rect>
+
+  <!-- INNER HEAD -->
+  <rect x="94" y="34" width="52" height="34" rx="8" fill="#475569"></rect>
+
+  <!-- DISPLAY -->
+  <rect x="102" y="40" width="36" height="18" rx="4" fill="#111827"></rect>
+
+  <text x="108" y="53" font-size="10" font-family="monospace" fill="#22C55E">LVL</text>
+
+  <!-- STATUS LIGHT -->
+  <circle cx="146" cy="42" r="4" fill="#22C55E">
+
+    <animate attributeName="opacity" values="1;0.3;1" dur="1s" repeatCount="indefinite"></animate>
+
+  </circle>
+
+  <!-- CABLE GLAND -->
+  <rect x="112" y="74" width="16" height="14" rx="5" fill="#1E293B"></rect>
+
+  <!-- SENSOR ROD -->
+  <rect x="116" y="86" width="8" height="88" rx="4" fill="#CBD5E1"></rect>
+
+  <!-- SENSOR TIP -->
+  <g transform="translate(120 182)">
+
+    <!-- OUTER -->
+    <circle cx="0" cy="0" r="18" fill="#1E293B"></circle>
+
+    <!-- INNER -->
+    <circle cx="0" cy="0" r="10" fill="#0F172A"></circle>
+
+    <!-- PULSE -->
+    <circle cx="0" cy="0" r="22" stroke="#38BDF8" stroke-width="2" opacity="0.5">
+
+      <animate attributeName="r" values="18;28;18" dur="1.8s" repeatCount="indefinite"></animate>
+
+      <animate attributeName="opacity" values="0.7;0;0.7" dur="1.8s" repeatCount="indefinite"></animate>
+
+    </circle>
+
+    <!-- CENTER -->
+    <circle cx="0" cy="0" r="4" fill="#38BDF8"></circle>
+
+  </g>
+
+  
+
+</svg>

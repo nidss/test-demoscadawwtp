@@ -1,0 +1,37 @@
+<svg width="240" height="240" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- SHADOW -->
+  <ellipse cx="120" cy="202" rx="72" ry="10" fill="#00000020"></ellipse>
+
+  <!-- OUTER FRAME -->
+  <rect x="36" y="34" width="168" height="144" rx="22" fill="#334155"></rect>
+
+  <!-- INNER FRAME -->
+  <rect x="48" y="46" width="144" height="120" rx="16" fill="#1E293B"></rect>
+
+  <!-- OLED SCREEN -->
+  <rect x="58" y="56" width="124" height="100" rx="10" fill="#020617"></rect>
+
+  <!-- SCREEN GLOW -->
+  <rect x="58" y="56" width="124" height="100" rx="10" stroke="#22C55E" stroke-opacity="0.18" stroke-width="2"></rect>
+
+  <!-- HEADER -->
+  <text x="70" y="76" font-size="10" font-family="monospace" fill="#86EFAC">SCADA DISPLAY</text>
+
+  <!-- MAIN VALUE -->
+  <text x="72" y="112" font-size="34" font-family="monospace" fill="#22C55E">72%</text>
+
+  <!-- SUBTEXT -->
+  <text x="74" y="132" font-size="10" font-family="Arial" fill="#4ADE80">TANK LEVEL</text>
+
+  
+  <!-- STATUS LED -->
+  <circle cx="160" cy="72" r="4" fill="#22C55E">
+
+    <animate attributeName="opacity" values="1;0.25;1" dur="1s" repeatCount="indefinite"></animate>
+
+  </circle>
+
+  
+
+</svg>

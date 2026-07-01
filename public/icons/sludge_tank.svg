@@ -1,0 +1,137 @@
+<svg width="240" height="240" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- SHADOW -->
+  <ellipse cx="120" cy="210" rx="66" ry="10" fill="#00000020"></ellipse>
+
+  <!-- OUTER TANK -->
+  <rect x="54" y="38" width="132" height="156" rx="30" fill="#334155"></rect>
+
+  <!-- INNER TANK -->
+  <rect x="66" y="50" width="108" height="132" rx="22" fill="#475569"></rect>
+
+  <!-- TOP CAP -->
+  <ellipse cx="120" cy="38" rx="66" ry="18" fill="#64748B"></ellipse>
+  <ellipse cx="120" cy="38" rx="52" ry="11" fill="#94A3B8"></ellipse>
+
+  <!-- BOTTOM CAP -->
+  <ellipse cx="120" cy="194" rx="66" ry="18" fill="#1E293B"></ellipse>
+
+  <!-- CLIP -->
+  <clipPath id="sludgeClip">
+    <rect x="66" y="50" width="108" height="132" rx="22"></rect>
+  </clipPath>
+
+  <!-- SLUDGE -->
+  <g clip-path="url(#sludgeClip)">
+
+    <!-- LIQUID -->
+    <rect x="66" y="112" width="108" height="70" fill="#6B4F2A"></rect>
+
+    <!-- SURFACE -->
+    <path d="
+      M66 118
+      C78 108 92 126 104 118
+      C116 110 128 126 140 118
+      C152 110 162 124 174 118
+      V182
+      H66
+      Z" fill="#8B6A3D">
+
+      <animateTransform attributeName="transform" type="translate" values="0 0;0 3;0 0" dur="2.4s" repeatCount="indefinite"></animateTransform>
+
+    </path>
+
+    <!-- FOAM / PARTICLES -->
+    <circle cx="90" cy="124" r="3" fill="#A98A58">
+      <animate attributeName="cy" values="124;120;124" dur="2s" repeatCount="indefinite"></animate>
+    </circle>
+
+    <circle cx="132" cy="128" r="2.5" fill="#B89B68">
+      <animate attributeName="cy" values="128;122;128" dur="2.6s" repeatCount="indefinite"></animate>
+    </circle>
+
+    <circle cx="154" cy="120" r="3" fill="#A98A58">
+      <animate attributeName="cy" values="120;116;120" dur="1.8s" repeatCount="indefinite"></animate>
+    </circle>
+
+  </g>
+
+  <!-- MIXER SHAFT -->
+  <rect x="116" y="58" width="8" height="78" rx="4" fill="#CBD5E1"></rect>
+
+  <!-- MIXER -->
+  <g transform="translate(120 138)">
+
+    <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="3s" repeatCount="indefinite" additive="sum"></animateTransform>
+
+    <!-- BLADES -->
+    <path d="M0 -20 L8 0 L0 8 L-8 0 Z" fill="#94A3B8"></path>
+    <path d="M20 0 L0 8 L-8 0 L0 -8 Z" fill="#64748B"></path>
+    <path d="M0 20 L-8 0 L0 -8 L8 0 Z" fill="#94A3B8"></path>
+    <path d="M-20 0 L0 -8 L8 0 L0 8 Z" fill="#64748B"></path>
+
+    <!-- HUB -->
+    <circle cx="0" cy="0" r="8" fill="#E2E8F0"></circle>
+    <circle cx="0" cy="0" r="3" fill="#64748B"></circle>
+
+  </g>
+
+  <!-- TOP MOTOR -->
+  <rect x="92" y="18" width="56" height="28" rx="8" fill="#1E293B"></rect>
+  <rect x="102" y="8" width="36" height="14" rx="5" fill="#475569"></rect>
+
+  <!-- PIPE LEFT -->
+  <rect x="20" y="92" width="36" height="22" rx="6" fill="#64748B"></rect>
+  <rect x="26" y="98" width="24" height="10" rx="3" fill="#94A3B8"></rect>
+
+  <!-- PIPE RIGHT -->
+  <rect x="184" y="146" width="36" height="22" rx="6" fill="#64748B"></rect>
+  <rect x="190" y="152" width="24" height="10" rx="3" fill="#94A3B8"></rect>
+
+  
+
+  <defs>
+
+  <clipPath id="sludgeClip">
+    <rect x="66" y="50" width="108" height="132" rx="22"></rect>
+  </clipPath>
+
+  <clipPath id="gaugeClip">
+    <rect x="190" y="58" width="10" height="110" rx="5"></rect>
+  </clipPath>
+
+</defs>
+
+<!-- LEVEL GAUGE BODY -->
+<rect x="188" y="56" width="14" height="114" rx="7" fill="#1E293B" stroke="#CBD5E1" stroke-width="2"></rect>
+
+<!-- INNER TICKS -->
+<g opacity="0.22" stroke="#FFFFFF" stroke-width="1">
+
+  <line x1="191" y1="72" x2="199" y2="72"></line>
+  <line x1="191" y1="92" x2="199" y2="92"></line>
+  <line x1="191" y1="112" x2="199" y2="112"></line>
+  <line x1="191" y1="132" x2="199" y2="132"></line>
+  <line x1="191" y1="152" x2="199" y2="152"></line>
+
+</g>
+
+<!-- LIQUID -->
+<g clip-path="url(#gaugeClip)">
+
+  <rect x="190" y="96" width="10" height="72" fill="#EAB308">
+
+    <animate attributeName="y" values="96;92;96" dur="2.5s" repeatCount="indefinite"></animate>
+
+    <animate attributeName="height" values="72;76;72" dur="2.5s" repeatCount="indefinite"></animate>
+
+  </rect>
+
+</g>
+  
+  <!-- WARNING LIGHT -->
+  <circle cx="160" cy="58" r="5" fill="#F59E0B">
+    <animate attributeName="opacity" values="1;0.25;1" dur="1s" repeatCount="indefinite"></animate>
+  </circle>
+
+</svg>
