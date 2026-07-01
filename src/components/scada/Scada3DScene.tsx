@@ -364,14 +364,22 @@ function TankMesh({ data, selected, onSelect, onDragStart, onFootprint }: {
 // than tinting the model's own material, since `.clone()` shares materials
 // across instances of the same model.
 
-const EQUALIZATION_MODEL_URL = "/models/ket-nuoc-inox02.glb";
-const ANOXIC_MODEL_URL = "/models/water-septic-tank.glb";
-const PUMP_MODEL_URL = "/models/water-pump-2.glb";
+// `import.meta.env.BASE_URL` makes the paths work under any deployment base
+// (e.g. GitHub Pages subpath `/test-demoscadawwtp/`) — a hardcoded leading
+// "/" would 404 there since it ignores the subpath entirely.
+function modelUrl(name: string): string {
+  const base = import.meta.env.BASE_URL ?? "/";
+  return `${base.replace(/\/$/, "")}/models/${name}`;
+}
+
+const EQUALIZATION_MODEL_URL = modelUrl("ket-nuoc-inox02.glb");
+const ANOXIC_MODEL_URL = modelUrl("water-septic-tank.glb");
+const PUMP_MODEL_URL = modelUrl("water-pump-2.glb");
 // This one is ~61MB (vs. a few hundred KB - few MB for the others above) — it
 // is deliberately NOT in the preload list below, so it only starts
 // downloading the first time a building that actually has an aeration tank
 // is opened, rather than on every visit to the Diagram tab regardless of kind.
-const AERATION_MODEL_URL = "/models/daf-tank.glb";
+const AERATION_MODEL_URL = modelUrl("daf-tank.glb");
 
 function useCenteredScaledGltf(url: string, targetHeight: number) {
   const { scene } = useGLTF(url);
