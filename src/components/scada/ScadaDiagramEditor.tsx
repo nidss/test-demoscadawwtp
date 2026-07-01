@@ -14,7 +14,7 @@ import { ScadaSvgIcon, getTankIconUrl, getEquipmentIconUrl } from "@/components/
 import { Scada3DScene, type Scada3DSceneHandle } from "@/components/scada/Scada3DScene";
 import {
   TANK_KIND_LABEL, EQ_COLORS, EQ_LABEL,
-  type TankData, type EqData, type Scada3DNode, type Scada3DEdge,
+  type TankData, type EqData, type Scada3DNode, type Scada3DEdge, type AnchorSide,
 } from "@/components/scada/scadaVisuals";
 import { useDarkMode } from "@/hooks/use-dark-mode";
 
@@ -257,11 +257,14 @@ function autoLayout(building: BuildingConfig): { nodes: Scada3DNode[]; edges: Sc
     uqX += EQ_SLOT_W + EQ_COL_GAP;
   });
 
-  // Pipe edges tank → next tank
+  // Pipe edges tank → next tank (east side of the earlier tank into the west
+  // side of the next one, matching the left-to-right column layout above).
   const edges: Scada3DEdge[] = tanks.slice(0, -1).map((t, i) => ({
     id: `pipe-${t.id}-${tanks[i + 1].id}`,
     source: `tank-${t.id}`,
     target: `tank-${tanks[i + 1].id}`,
+    sourceSide: "east",
+    targetSide: "west",
     active: true,
   }));
 
@@ -306,14 +309,17 @@ function ScadaEditorInner({ building, onSaved }: { building: BuildingConfig; onS
     setNodes((nds) => nds.map((n) => n.id === id ? { ...n, position: { x, z } } : n));
   }, []);
 
-  const handleConnect = useCallback((sourceId: string, targetId: string) => {
+  const handleConnect = useCallback((sourceId: string, sourceSide: AnchorSide, targetId: string, targetSide: AnchorSide) => {
     if (sourceId === targetId) return;
     setEdges((eds) => {
       const exists = eds.some(
         (e) => (e.source === sourceId && e.target === targetId) || (e.source === targetId && e.target === sourceId),
       );
       if (exists) return eds;
-      return [...eds, { id: `pipe-${sourceId}-${targetId}-${nodeCounter++}`, source: sourceId, target: targetId, active: true }];
+      return [...eds, {
+        id: `pipe-${sourceId}-${targetId}-${nodeCounter++}`,
+        source: sourceId, target: targetId, sourceSide, targetSide, active: true,
+      }];
     });
   }, []);
 

@@ -16,10 +16,18 @@ export interface Scada3DNode {
   data: TankData | EqData;
 }
 
+export type AnchorSide = "north" | "south" | "east" | "west";
+export const ANCHOR_SIDES: AnchorSide[] = ["north", "south", "east", "west"];
+
 export interface Scada3DEdge {
   id: string;
   source: string;
   target: string;
+  /** Which side each end's pipe connector was plugged into. Defaults to
+   * east→west (matches the left-to-right autoLayout flow) for older saved
+   * diagrams that predate per-side anchors. */
+  sourceSide?: AnchorSide;
+  targetSide?: AnchorSide;
   active: boolean;
 }
 
@@ -83,7 +91,49 @@ export const TANK_RADIUS = 0.55;
 export const EQ_HEIGHT = 0.7;
 export const EQ_SIZE = 0.6;
 
-/** World-space height of a node's pipe-connector anchor, above its ground position. */
-export function anchorHeight(type: "tank" | "equipment"): number {
-  return (type === "tank" ? TANK_HEIGHT : EQ_HEIGHT) + 0.45;
+/**
+ * Real GLB models rarely match the procedural cylinder/box footprint they
+ * replace (e.g. the DAF aeration tank is a long flat basin, much wider than
+ * TANK_RADIUS). Their actual scaled half-extents get measured once on load
+ * and reported up so anchors sit on the real surface instead of buried
+ * inside — or outside — a generic guess.
+ */
+export interface AnchorFootprint { halfX: number; halfZ: number }
+
+// Small outward margin so anchor spheres sit clear of the surface (easier to
+// see/click) instead of sitting exactly flush with it.
+const ANCHOR_MARGIN = 0.06;
+
+/**
+ * Local offset (relative to a node's ground position) of its pipe-connector
+ * anchor on a given side. Anchors sit at mid-height on the side faces —
+ * north/south along Z, east/west along X — like real inlet/outlet nozzles,
+ * rather than a single point floating above the object. Pass `footprint` for
+ * nodes whose visual body is a GLB model with its own real proportions.
+ */
+export function anchorLocalPosition(
+  type: "tank" | "equipment",
+  side: AnchorSide,
+  footprint?: AnchorFootprint,
+): { x: number; y: number; z: number } {
+  const fallback = type === "tank" ? TANK_RADIUS : EQ_SIZE / 2;
+  const halfX = (footprint?.halfX ?? fallback) + ANCHOR_MARGIN;
+  const halfZ = (footprint?.halfZ ?? fallback) + ANCHOR_MARGIN;
+  const y = (type === "tank" ? TANK_HEIGHT : EQ_HEIGHT) / 2;
+  switch (side) {
+    case "north": return { x: 0, y, z: -halfZ };
+    case "south": return { x: 0, y, z: halfZ };
+    case "east":  return { x: halfX, y, z: 0 };
+    case "west":  return { x: -halfX, y, z: 0 };
+  }
+}
+
+/** World-space position of a node's anchor on a given side. */
+export function anchorWorldPosition(
+  node: { type: "tank" | "equipment"; position: { x: number; z: number } },
+  side: AnchorSide,
+  footprint?: AnchorFootprint,
+): { x: number; y: number; z: number } {
+  const local = anchorLocalPosition(node.type, side, footprint);
+  return { x: node.position.x + local.x, y: local.y, z: node.position.z + local.z };
 }

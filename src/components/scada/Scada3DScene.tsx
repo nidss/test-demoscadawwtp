@@ -3,13 +3,14 @@ import {
   type ElementRef,
 } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Html, Line, useTexture } from "@react-three/drei";
+import { OrbitControls, Html, Line, useTexture, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import { getEquipmentIconUrl } from "@/components/scada/ScadaIcons";
 import {
   TANK_COLORS, EQ_COLORS, STATUS_COLOR, TANK_KIND_LABEL, EQ_LABEL,
-  TANK_HEIGHT, TANK_RADIUS, EQ_HEIGHT, EQ_SIZE, anchorHeight,
-  type Scada3DNode, type Scada3DEdge, type TankData, type EqData,
+  TANK_HEIGHT, TANK_RADIUS, EQ_HEIGHT, EQ_SIZE,
+  ANCHOR_SIDES, anchorLocalPosition, anchorWorldPosition,
+  type Scada3DNode, type Scada3DEdge, type TankData, type EqData, type AnchorSide, type AnchorFootprint,
 } from "@/components/scada/scadaVisuals";
 
 // ── Public handle: lets the DOM-level palette drag/drop (outside the R3F tree)
@@ -33,7 +34,12 @@ export interface Scada3DSceneProps {
   isDarkMode: boolean;
   onSelectNode: (id: string | null) => void;
   onMoveNode: (id: string, x: number, z: number) => void;
-  onConnect: (sourceId: string, targetId: string) => void;
+  onConnect: (sourceId: string, sourceSide: AnchorSide, targetId: string, targetSide: AnchorSide) => void;
+}
+
+interface PendingAnchor {
+  nodeId: string;
+  side: AnchorSide;
 }
 
 export const Scada3DScene = forwardRef<Scada3DSceneHandle, Scada3DSceneProps>(function Scada3DScene(
@@ -47,8 +53,20 @@ export const Scada3DScene = forwardRef<Scada3DSceneHandle, Scada3DSceneProps>(fu
   // OrbitControls' own native listener on fast pointer sequences.
   const controlsRef = useRef<ElementRef<typeof OrbitControls>>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [pendingSourceId, setPendingSourceId] = useState<string | null>(null);
+  const [pendingSource, setPendingSource] = useState<PendingAnchor | null>(null);
   const [cursorGround, setCursorGround] = useState<{ x: number; z: number } | null>(null);
+  // Real footprint (measured from each GLB model's own bounding box) of nodes
+  // whose visual body is a swapped-in 3D model, keyed by node id. Anchors for
+  // everything else fall back to the generic procedural TANK_RADIUS/EQ_SIZE.
+  const [footprints, setFootprints] = useState<Record<string, AnchorFootprint>>({});
+
+  const reportFootprint = useCallback((nodeId: string, fp: AnchorFootprint) => {
+    setFootprints((prev) => {
+      const existing = prev[nodeId];
+      if (existing && existing.halfX === fp.halfX && existing.halfZ === fp.halfZ) return prev;
+      return { ...prev, [nodeId]: fp };
+    });
+  }, []);
 
   const beginDrag = useCallback((id: string) => {
     if (controlsRef.current) controlsRef.current.enabled = false;
@@ -66,7 +84,9 @@ export const Scada3DScene = forwardRef<Scada3DSceneHandle, Scada3DSceneProps>(fu
   // warning; deferring by a microtask moves it safely past the current commit.
   const selectNode = useCallback((id: string | null) => { queueMicrotask(() => onSelectNode(id)); }, [onSelectNode]);
   const moveNode = useCallback((id: string, x: number, z: number) => { queueMicrotask(() => onMoveNode(id, x, z)); }, [onMoveNode]);
-  const connectNodes = useCallback((s: string, t: string) => { queueMicrotask(() => onConnect(s, t)); }, [onConnect]);
+  const connectNodes = useCallback((s: string, sSide: AnchorSide, t: string, tSide: AnchorSide) => {
+    queueMicrotask(() => onConnect(s, sSide, t, tSide));
+  }, [onConnect]);
 
   useImperativeHandle(ref, () => ({
     screenToGround: (clientX, clientY) => {
@@ -91,7 +111,7 @@ export const Scada3DScene = forwardRef<Scada3DSceneHandle, Scada3DSceneProps>(fu
   // releasing, and let Escape back out of an armed pipe connection.
   useEffect(() => {
     const onPointerUp = () => endDrag();
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === "Escape") setPendingSourceId(null); };
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === "Escape") setPendingSource(null); };
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("keydown", onKeyDown);
     return () => {
@@ -102,11 +122,10 @@ export const Scada3DScene = forwardRef<Scada3DSceneHandle, Scada3DSceneProps>(fu
 
   const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
 
-  const handleAnchorClick = useCallback((nodeId: string) => {
-    setPendingSourceId((prev) => {
-      if (!prev) return nodeId;
-      if (prev === nodeId) return null;
-      connectNodes(prev, nodeId);
+  const handleAnchorClick = useCallback((nodeId: string, side: AnchorSide) => {
+    setPendingSource((prev) => {
+      if (!prev || prev.nodeId === nodeId) return { nodeId, side };
+      connectNodes(prev.nodeId, prev.side, nodeId, side);
       return null;
     });
   }, [connectNodes]);
@@ -116,7 +135,10 @@ export const Scada3DScene = forwardRef<Scada3DSceneHandle, Scada3DSceneProps>(fu
 
   return (
     <Canvas
-      camera={{ position: [5, 5.5, 7], fov: 45 }}
+      orthographic
+      // True isometric: camera offset equally on all three axes (1,1,1) gives
+      // the classic ~35.264° elevation / 45° azimuth with no perspective skew.
+      camera={{ position: [10, 10.5, 11], zoom: 60, near: 0.1, far: 200 }}
       onCreated={({ camera, gl }) => { bridgeRef.current = { camera, gl }; }}
       onPointerMissed={() => selectNode(null)}
     >
@@ -130,12 +152,12 @@ export const Scada3DScene = forwardRef<Scada3DSceneHandle, Scada3DSceneProps>(fu
         rotation={[-Math.PI / 2, 0, 0]}
         onPointerMove={(e) => {
           if (draggingId) moveNode(draggingId, snapToGrid(e.point.x), snapToGrid(e.point.z));
-          if (pendingSourceId) setCursorGround({ x: e.point.x, z: e.point.z });
+          if (pendingSource) setCursorGround({ x: e.point.x, z: e.point.z });
         }}
         onPointerUp={() => endDrag()}
         onClick={(e) => {
           e.stopPropagation();
-          if (pendingSourceId) { setPendingSourceId(null); return; }
+          if (pendingSource) { setPendingSource(null); return; }
           selectNode(null);
         }}
       >
@@ -148,10 +170,12 @@ export const Scada3DScene = forwardRef<Scada3DSceneHandle, Scada3DSceneProps>(fu
           key={node.id}
           node={node}
           selected={node.id === selectedNodeId}
-          pending={node.id === pendingSourceId}
+          pendingSide={pendingSource?.nodeId === node.id ? pendingSource.side : null}
+          footprint={footprints[node.id]}
           onSelect={() => selectNode(node.id)}
           onDragStart={() => beginDrag(node.id)}
-          onAnchorClick={() => handleAnchorClick(node.id)}
+          onAnchorClick={(side) => handleAnchorClick(node.id, side)}
+          onFootprint={(fp) => reportFootprint(node.id, fp)}
         />
       ))}
 
@@ -159,11 +183,27 @@ export const Scada3DScene = forwardRef<Scada3DSceneHandle, Scada3DSceneProps>(fu
         const s = nodeById.get(edge.source);
         const t = nodeById.get(edge.target);
         if (!s || !t) return null;
-        return <PipeTube key={edge.id} source={s} target={t} active={edge.active} />;
+        return (
+          <PipeTube
+            key={edge.id}
+            source={s}
+            target={t}
+            sourceSide={edge.sourceSide ?? "east"}
+            targetSide={edge.targetSide ?? "west"}
+            sourceFootprint={footprints[edge.source]}
+            targetFootprint={footprints[edge.target]}
+            active={edge.active}
+          />
+        );
       })}
 
-      {pendingSourceId && cursorGround && nodeById.get(pendingSourceId) && (
-        <PendingPipePreview source={nodeById.get(pendingSourceId)!} cursor={cursorGround} />
+      {pendingSource && cursorGround && nodeById.get(pendingSource.nodeId) && (
+        <PendingPipePreview
+          source={nodeById.get(pendingSource.nodeId)!}
+          side={pendingSource.side}
+          footprint={footprints[pendingSource.nodeId]}
+          cursor={cursorGround}
+        />
       )}
 
       <OrbitControls
@@ -173,8 +213,8 @@ export const Scada3DScene = forwardRef<Scada3DSceneHandle, Scada3DSceneProps>(fu
         enableDamping
         minPolarAngle={0.15}
         maxPolarAngle={Math.PI / 2 - 0.05}
-        minDistance={2}
-        maxDistance={30}
+        minZoom={20}
+        maxZoom={200}
         target={[0, 0.5, 1]}
       />
     </Canvas>
@@ -183,38 +223,50 @@ export const Scada3DScene = forwardRef<Scada3DSceneHandle, Scada3DSceneProps>(fu
 
 // ── Node mesh (tank or equipment) + shared connector anchor ──────────────────
 
-function NodeMesh({ node, selected, pending, onSelect, onDragStart, onAnchorClick }: {
+function NodeMesh({ node, selected, pendingSide, footprint, onSelect, onDragStart, onAnchorClick, onFootprint }: {
   node: Scada3DNode;
   selected: boolean;
-  pending: boolean;
+  pendingSide: AnchorSide | null;
+  footprint?: AnchorFootprint;
   onSelect: () => void;
   onDragStart: () => void;
-  onAnchorClick: () => void;
+  onAnchorClick: (side: AnchorSide) => void;
+  onFootprint: (fp: AnchorFootprint) => void;
 }) {
-  const anchorY = anchorHeight(node.type);
   return (
     <group position={[node.position.x, 0, node.position.z]}>
       {node.type === "tank" ? (
-        <TankMesh data={node.data as TankData} selected={selected} onSelect={onSelect} onDragStart={onDragStart} />
+        <TankMesh data={node.data as TankData} selected={selected} onSelect={onSelect} onDragStart={onDragStart} onFootprint={onFootprint} />
       ) : (
-        <EquipmentMesh data={node.data as EqData} selected={selected} onSelect={onSelect} onDragStart={onDragStart} />
+        <EquipmentMesh data={node.data as EqData} selected={selected} onSelect={onSelect} onDragStart={onDragStart} onFootprint={onFootprint} />
       )}
-      <mesh position={[0, anchorY, 0]} onClick={(e) => { e.stopPropagation(); onAnchorClick(); }}>
-        <sphereGeometry args={[0.09, 12, 12]} />
-        <meshStandardMaterial
-          color={pending ? "#f0abfc" : "#22d3ee"}
-          emissive={pending ? "#f0abfc" : "#22d3ee"}
-          emissiveIntensity={pending ? 1.2 : 0.6}
-        />
-      </mesh>
+      {ANCHOR_SIDES.map((side) => {
+        const local = anchorLocalPosition(node.type, side, footprint);
+        const isPending = pendingSide === side;
+        return (
+          <mesh
+            key={side}
+            position={[local.x, local.y, local.z]}
+            onClick={(e) => { e.stopPropagation(); onAnchorClick(side); }}
+          >
+            <sphereGeometry args={[0.08, 12, 12]} />
+            <meshStandardMaterial
+              color={isPending ? "#f0abfc" : "#22d3ee"}
+              emissive={isPending ? "#f0abfc" : "#22d3ee"}
+              emissiveIntensity={isPending ? 1.2 : 0.6}
+            />
+          </mesh>
+        );
+      })}
     </group>
   );
 }
 
 // ── Tank: translucent cylinder shell + rising water fill ─────────────────────
 
-function TankMesh({ data, selected, onSelect, onDragStart }: {
+function TankMesh({ data, selected, onSelect, onDragStart, onFootprint }: {
   data: TankData; selected: boolean; onSelect: () => void; onDragStart: () => void;
+  onFootprint: (fp: AnchorFootprint) => void;
 }) {
   const colors = TANK_COLORS[data.kind] ?? TANK_COLORS.custom;
   const levelRef = useRef(data.level ?? 60);
@@ -233,40 +285,59 @@ function TankMesh({ data, selected, onSelect, onDragStart }: {
     }
   });
 
+  const tankModelUrl = data.kind === "equalization" ? EQUALIZATION_MODEL_URL
+    : data.kind === "anoxic" ? ANOXIC_MODEL_URL
+    : data.kind === "aeration" ? AERATION_MODEL_URL
+    : null;
+
   return (
     <group
       onPointerDown={(e) => { e.stopPropagation(); onSelect(); onDragStart(); }}
       onClick={(e) => e.stopPropagation()}
     >
-      {/* floor disc */}
-      <mesh position={[0, 0.01, 0]}>
-        <cylinderGeometry args={[TANK_RADIUS, TANK_RADIUS, 0.02, 32]} />
-        <meshStandardMaterial color={colors.stroke} />
-      </mesh>
-      {/* water fill */}
-      <mesh ref={waterRef} position={[0, TANK_HEIGHT / 2, 0]}>
-        <cylinderGeometry args={[TANK_RADIUS * 0.88, TANK_RADIUS * 0.88, TANK_HEIGHT, 24]} />
-        <meshStandardMaterial color={colors.stroke} emissive={colors.stroke} emissiveIntensity={0.35} />
-      </mesh>
-      {/* translucent glass shell */}
-      <mesh position={[0, TANK_HEIGHT / 2, 0]}>
-        <cylinderGeometry args={[TANK_RADIUS, TANK_RADIUS, TANK_HEIGHT, 32, 1, true]} />
-        <meshStandardMaterial
-          color={colors.fill}
-          transparent
-          opacity={0.32}
-          side={THREE.DoubleSide}
-          emissive={selected ? "#22d3ee" : "#000000"}
-          emissiveIntensity={selected ? 0.4 : 0}
-        />
-      </mesh>
-      {/* rim */}
-      <mesh ref={rimRef} position={[0, TANK_HEIGHT, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[TANK_RADIUS, 0.03, 8, 32]} />
-        <meshStandardMaterial color={colors.stroke} emissive={colors.stroke} emissiveIntensity={0.5} />
-      </mesh>
+      {tankModelUrl ? (
+        <Suspense fallback={null}>
+          <GltfBodyWithRing
+            url={tankModelUrl}
+            targetHeight={TANK_HEIGHT * 0.85}
+            ringRadius={TANK_RADIUS * 1.5}
+            selected={selected}
+            onFootprint={onFootprint}
+          />
+        </Suspense>
+      ) : (
+        <>
+          {/* floor disc */}
+          <mesh position={[0, 0.01, 0]}>
+            <cylinderGeometry args={[TANK_RADIUS, TANK_RADIUS, 0.02, 32]} />
+            <meshStandardMaterial color={colors.stroke} />
+          </mesh>
+          {/* water fill */}
+          <mesh ref={waterRef} position={[0, TANK_HEIGHT / 2, 0]}>
+            <cylinderGeometry args={[TANK_RADIUS * 0.88, TANK_RADIUS * 0.88, TANK_HEIGHT, 24]} />
+            <meshStandardMaterial color={colors.stroke} emissive={colors.stroke} emissiveIntensity={0.35} />
+          </mesh>
+          {/* translucent glass shell */}
+          <mesh position={[0, TANK_HEIGHT / 2, 0]}>
+            <cylinderGeometry args={[TANK_RADIUS, TANK_RADIUS, TANK_HEIGHT, 32, 1, true]} />
+            <meshStandardMaterial
+              color={colors.fill}
+              transparent
+              opacity={0.32}
+              side={THREE.DoubleSide}
+              emissive={selected ? "#22d3ee" : "#000000"}
+              emissiveIntensity={selected ? 0.4 : 0}
+            />
+          </mesh>
+          {/* rim */}
+          <mesh ref={rimRef} position={[0, TANK_HEIGHT, 0]} rotation={[Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[TANK_RADIUS, 0.03, 8, 32]} />
+            <meshStandardMaterial color={colors.stroke} emissive={colors.stroke} emissiveIntensity={0.5} />
+          </mesh>
+        </>
+      )}
 
-      <Html position={[0, TANK_HEIGHT + 0.65, 0]} center distanceFactor={8} zIndexRange={[10, 0]}>
+      <Html position={[0, TANK_HEIGHT + 0.65, 0]} center zIndexRange={[10, 0]}>
         <div className="flex flex-col items-center gap-0.5 pointer-events-none select-none">
           <span className="text-[11px] font-mono font-bold" style={{ color: colors.stroke }}>{data.tag}</span>
           <span
@@ -284,10 +355,70 @@ function TankMesh({ data, selected, onSelect, onDragStart }: {
   );
 }
 
+// ── Real-world GLB models, swapped in for specific kinds instead of the
+// procedural shapes. Each model is recentered (bottom -> ground, XZ -> origin)
+// and rescaled to roughly the same footprint as its procedural counterpart, so
+// anchors/labels/pipes stay consistent regardless of kind. No animated water
+// fill for tank models (level % is still shown in the label) since they have
+// no separate water mesh to scale. Selection is shown as a ground ring rather
+// than tinting the model's own material, since `.clone()` shares materials
+// across instances of the same model.
+
+const EQUALIZATION_MODEL_URL = "/models/ket-nuoc-inox02.glb";
+const ANOXIC_MODEL_URL = "/models/water-septic-tank.glb";
+const PUMP_MODEL_URL = "/models/water-pump-2.glb";
+// This one is ~61MB (vs. a few hundred KB - few MB for the others above) — it
+// is deliberately NOT in the preload list below, so it only starts
+// downloading the first time a building that actually has an aeration tank
+// is opened, rather than on every visit to the Diagram tab regardless of kind.
+const AERATION_MODEL_URL = "/models/daf-tank.glb";
+
+function useCenteredScaledGltf(url: string, targetHeight: number) {
+  const { scene } = useGLTF(url);
+  return useMemo(() => {
+    const cloned = scene.clone(true);
+    const box = new THREE.Box3().setFromObject(cloned);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    cloned.position.x -= (box.min.x + box.max.x) / 2;
+    cloned.position.z -= (box.min.z + box.max.z) / 2;
+    cloned.position.y -= box.min.y;
+    const scale = targetHeight / (size.y || 1);
+    const footprint: AnchorFootprint = { halfX: (size.x * scale) / 2, halfZ: (size.z * scale) / 2 };
+    return { object: cloned, scale, footprint };
+  }, [scene, targetHeight]);
+}
+
+function GltfBodyWithRing({ url, targetHeight, ringRadius, selected, onFootprint }: {
+  url: string; targetHeight: number; ringRadius: number; selected: boolean;
+  onFootprint: (fp: AnchorFootprint) => void;
+}) {
+  const { object, scale, footprint } = useCenteredScaledGltf(url, targetHeight);
+
+  useEffect(() => { onFootprint(footprint); }, [footprint, onFootprint]);
+
+  return (
+    <>
+      <group scale={scale}>
+        <primitive object={object} />
+      </group>
+      <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[ringRadius * 0.9, ringRadius, 32]} />
+        <meshBasicMaterial color={selected ? "#22d3ee" : "#334155"} transparent opacity={selected ? 0.9 : 0.3} />
+      </mesh>
+    </>
+  );
+}
+
+useGLTF.preload(EQUALIZATION_MODEL_URL);
+useGLTF.preload(ANOXIC_MODEL_URL);
+useGLTF.preload(PUMP_MODEL_URL);
+
 // ── Equipment: color-coded housing + icon decal + status beacon ──────────────
 
-function EquipmentMesh({ data, selected, onSelect, onDragStart }: {
+function EquipmentMesh({ data, selected, onSelect, onDragStart, onFootprint }: {
   data: EqData; selected: boolean; onSelect: () => void; onDragStart: () => void;
+  onFootprint: (fp: AnchorFootprint) => void;
 }) {
   const color = EQ_COLORS[data.kind] ?? EQ_COLORS.other;
   const statusColor = STATUS_COLOR[data.status ?? "running"];
@@ -304,30 +435,46 @@ function EquipmentMesh({ data, selected, onSelect, onDragStart }: {
     }
   });
 
+  const isPump = data.kind === "pump";
+
   return (
     <group
       onPointerDown={(e) => { e.stopPropagation(); onSelect(); onDragStart(); }}
       onClick={(e) => e.stopPropagation()}
     >
-      <mesh position={[0, EQ_HEIGHT / 2, 0]}>
-        <boxGeometry args={[EQ_SIZE, EQ_HEIGHT, EQ_SIZE]} />
-        <meshStandardMaterial
-          color={color}
-          emissive={selected ? "#22d3ee" : color}
-          emissiveIntensity={selected ? 0.6 : 0.12}
-        />
-      </mesh>
-      {iconUrl && (
+      {isPump ? (
         <Suspense fallback={null}>
-          <EquipmentIconDecal url={iconUrl} y={EQ_HEIGHT / 2} z={EQ_SIZE / 2 + 0.012} />
+          <GltfBodyWithRing
+            url={PUMP_MODEL_URL}
+            targetHeight={EQ_HEIGHT * 1.1}
+            ringRadius={EQ_SIZE * 0.95}
+            selected={selected}
+            onFootprint={onFootprint}
+          />
         </Suspense>
+      ) : (
+        <>
+          <mesh position={[0, EQ_HEIGHT / 2, 0]}>
+            <boxGeometry args={[EQ_SIZE, EQ_HEIGHT, EQ_SIZE]} />
+            <meshStandardMaterial
+              color={color}
+              emissive={selected ? "#22d3ee" : color}
+              emissiveIntensity={selected ? 0.6 : 0.12}
+            />
+          </mesh>
+          {iconUrl && (
+            <Suspense fallback={null}>
+              <EquipmentIconDecal url={iconUrl} y={EQ_HEIGHT / 2} z={EQ_SIZE / 2 + 0.012} />
+            </Suspense>
+          )}
+        </>
       )}
       <mesh ref={statusRef} position={[0, EQ_HEIGHT + 0.14, 0]}>
         <sphereGeometry args={[0.07, 12, 12]} />
         <meshStandardMaterial color={statusColor} emissive={statusColor} emissiveIntensity={0.8} />
       </mesh>
 
-      <Html position={[0, EQ_HEIGHT + 0.55, 0]} center distanceFactor={8} zIndexRange={[10, 0]}>
+      <Html position={[0, EQ_HEIGHT + 0.55, 0]} center zIndexRange={[10, 0]}>
         <div className="flex flex-col items-center gap-0.5 pointer-events-none select-none">
           <span className="text-[11px] font-mono font-bold" style={{ color }}>{data.tag}</span>
           <span className="text-[10px] font-mono text-slate-400 max-w-[100px] text-center truncate">
@@ -351,20 +498,26 @@ function EquipmentIconDecal({ url, y, z }: { url: string; y: number; z: number }
 
 // ── Pipe: tube along a bowed curve between two anchors, with flow animation ──
 
-function PipeTube({ source, target, active }: { source: Scada3DNode; target: Scada3DNode; active: boolean }) {
+function PipeTube({ source, target, sourceSide, targetSide, sourceFootprint, targetFootprint, active }: {
+  source: Scada3DNode; target: Scada3DNode; sourceSide: AnchorSide; targetSide: AnchorSide;
+  sourceFootprint?: AnchorFootprint; targetFootprint?: AnchorFootprint; active: boolean;
+}) {
   const texture = useMemo(() => createStripeTexture(), []);
 
   const geometry = useMemo(() => {
-    const sh = anchorHeight(source.type);
-    const th = anchorHeight(target.type);
-    const start = new THREE.Vector3(source.position.x, sh, source.position.z);
-    const end = new THREE.Vector3(target.position.x, th, target.position.z);
+    const s = anchorWorldPosition(source, sourceSide, sourceFootprint);
+    const t = anchorWorldPosition(target, targetSide, targetFootprint);
+    const start = new THREE.Vector3(s.x, s.y, s.z);
+    const end = new THREE.Vector3(t.x, t.y, t.z);
     const dist = start.distanceTo(end);
     const mid = start.clone().add(end).multiplyScalar(0.5);
     mid.y += 0.4 + dist * 0.08;
     const curve = new THREE.QuadraticBezierCurve3(start, mid, end);
     return new THREE.TubeGeometry(curve, 32, 0.045, 8, false);
-  }, [source.position.x, source.position.z, source.type, target.position.x, target.position.z, target.type]);
+  }, [
+    source.position.x, source.position.z, source.type, sourceSide, sourceFootprint,
+    target.position.x, target.position.z, target.type, targetSide, targetFootprint,
+  ]);
 
   useEffect(() => () => geometry.dispose(), [geometry]);
   useEffect(() => () => texture.dispose(), [texture]);
@@ -403,14 +556,16 @@ function createStripeTexture(): THREE.CanvasTexture {
 
 // ── Temporary preview line while a pipe connection is being armed ────────────
 
-function PendingPipePreview({ source, cursor }: { source: Scada3DNode; cursor: { x: number; z: number } }) {
+function PendingPipePreview({ source, side, footprint, cursor }: {
+  source: Scada3DNode; side: AnchorSide; footprint?: AnchorFootprint; cursor: { x: number; z: number };
+}) {
   const points = useMemo(() => {
-    const sh = anchorHeight(source.type);
+    const s = anchorWorldPosition(source, side, footprint);
     return [
-      new THREE.Vector3(source.position.x, sh, source.position.z),
+      new THREE.Vector3(s.x, s.y, s.z),
       new THREE.Vector3(cursor.x, 0.3, cursor.z),
     ];
-  }, [source.position.x, source.position.z, source.type, cursor.x, cursor.z]);
+  }, [source.position.x, source.position.z, source.type, side, footprint, cursor.x, cursor.z]);
 
   return <Line points={points} color="#f0abfc" dashed dashSize={0.15} gapSize={0.1} lineWidth={2} />;
 }
