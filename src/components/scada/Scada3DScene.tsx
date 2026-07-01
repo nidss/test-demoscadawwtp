@@ -19,6 +19,13 @@ export interface Scada3DSceneHandle {
   screenToGround: (clientX: number, clientY: number) => { x: number; z: number } | null;
 }
 
+// Matches the gridHelper below (size 60 / 60 divisions => 1 unit per cell),
+// so dropped/dragged nodes land exactly on a grid intersection.
+const GRID_CELL_SIZE = 1;
+function snapToGrid(v: number): number {
+  return Math.round(v / GRID_CELL_SIZE) * GRID_CELL_SIZE;
+}
+
 export interface Scada3DSceneProps {
   nodes: Scada3DNode[];
   edges: Scada3DEdge[];
@@ -74,7 +81,9 @@ export const Scada3DScene = forwardRef<Scada3DSceneHandle, Scada3DSceneProps>(fu
       raycaster.setFromCamera(ndc, bridge.camera);
       const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
       const point = new THREE.Vector3();
-      return raycaster.ray.intersectPlane(groundPlane, point) ? { x: point.x, z: point.z } : null;
+      return raycaster.ray.intersectPlane(groundPlane, point)
+        ? { x: snapToGrid(point.x), z: snapToGrid(point.z) }
+        : null;
     },
   }), []);
 
@@ -120,7 +129,7 @@ export const Scada3DScene = forwardRef<Scada3DSceneHandle, Scada3DSceneProps>(fu
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
         onPointerMove={(e) => {
-          if (draggingId) moveNode(draggingId, e.point.x, e.point.z);
+          if (draggingId) moveNode(draggingId, snapToGrid(e.point.x), snapToGrid(e.point.z));
           if (pendingSourceId) setCursorGround({ x: e.point.x, z: e.point.z });
         }}
         onPointerUp={() => endDrag()}
