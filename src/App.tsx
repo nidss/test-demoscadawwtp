@@ -1234,7 +1234,7 @@ function DiagramTab({ building }: DiagramTabProps) {
             {building.nameTh} — Process Flow Diagram
           </strong>
           <span className="text-muted-foreground text-xs">
-            ลากถังและอุปกรณ์จาก palette ทางซ้าย · ลากปลาย handle เพื่อวางท่อเชื่อมต่อ · กด "บันทึก" เพื่อบันทึก layout
+            ลากถังและอุปกรณ์จาก palette ทางซ้ายลงบนฉาก 3D · ลาก/scroll เพื่อหมุน-ซูมกล้อง · คลิกจุดต่อสีฟ้าที่ต้นทางแล้วปลายทางเพื่อวางท่อ · กด "บันทึก" เพื่อบันทึก layout
           </span>
         </div>
       </div>
